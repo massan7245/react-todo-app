@@ -1,52 +1,121 @@
-import { useState, useRef } from 'react';
-import './App.css';
-import TodoList from './TodoList';
-import { v4 as uuidv4 } from 'uuid';
+import { useState, useReducer, useEffect } from 'react';
+import TodoForm from './components/TodoForm';
+import TodoList from './components/TodoList';
+import TodoResult from './components/TodoResult';
+import TodoFilter from './components/TodoFilter';
+import TodoDoneDelete from './components/TodoDoneDelete';
 
-function App() {
-  const [todos, setTodos] = useState([]);
+import { todoReducer, initialTodos } from './todoReducer';
+import { loadTodos, saveTodos } from './todoStorage';
 
-  const todoNameRef = useRef();
+// Todoリストを作成
+const App = () => {
+  const [todos, dispatch] = useReducer(todoReducer, initialTodos, loadTodos);
+  const [inputVal, setInputVal] = useState(''); // 入力欄の文字
+  const [filterType, setFilterType] = useState('all');
+  const [editingId, setEditingId] = useState(null); // 現在どのTodoを編集中なのかを管理するstate
+  // editingId: どのTodoを編集中か
+  const [editingText, setEditingText] = useState(''); // 編集後の文章を管理するstate
+  // editingText: 編集欄に入力されている文章
 
-  const handleAddTodo = () => {
-    // タスクを追加する
-    const name = todoNameRef.current.value;
-    if (name === '') return;
-    setTodos((prevTodos) => {
-      return [...prevTodos, { id: uuidv4(), name: name, completed: false }];
-    });
-    todoNameRef.current.value = ''; // 入力後に入力欄を空にする
+  // todosが変更されるたびにlocalStorageへ保存するuseEffect
+  useEffect(() => {
+    // todosをJSON形式の文字列へ変換して、決めたキー名でlocalStorageへ保存する
+    saveTodos(todos);
+    
+  }, [todos]);
+
+  // 完了・未完了時のTodo(フィルターをかける)
+  const filteredTodos = todos.filter((todo) => {
+    if (filterType === 'active') {
+      return !todo.completed; // 未完了のTodoだけ残す
+    } else if (filterType === 'completed') {
+      return todo.completed; // 完了済みのTodoだけ残す
+    } else {
+      return true;
+    }
+  });
+
+  // Formの追加
+  const addTodo = (e) => {
+    e.preventDefault();
+    if (inputVal.trim() === '') return; // 空入力の場合なにもしない。
+    // Todo 1件のオブジェクト
+    const todo = {
+      id: Date.now(),
+      text: inputVal.trim(),
+      completed: false,
+    };
+    dispatch({ type: 'add', payload: todo }); // Todoリストを更新
+    setInputVal(''); // 入力欄を空白に戻す
   };
 
-  // Enterキーでタスクを追加する
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    handleAddTodo();
+  // Todo1件を削除
+  const deleteTodo = (id) => {
+    dispatch({ type: 'delete', payload: id });
   };
 
+  // トグルボタンでcompletedを反転
   const toggleTodo = (id) => {
-    const newTodos = [...todos]; // 配列をコピー
-    const todo = newTodos.find((todo) => todo.id === id); // 対象のタスクを見つける
-    todo.completed = !todo.completed; // タスクの完了状態を切り替える
-    setTodos(newTodos); // 状態を更新する
+    dispatch({ type: 'toggle', payload: id });
   };
 
-  const handleClear = () => {
-    const newTodos = todos.filter((todo) => !todo.completed);
-    setTodos(newTodos);
+  // Listの編集開始
+  const startEditing = (todo) => {
+    setEditingId(todo.id);
+    setEditingText(todo.text);
+  };
+
+  // Listの保存処理
+  const saveEditing = () => {
+    // 編集で空白での保存はreturnする
+    if (editingText.trim() === '') return;
+
+    dispatch({
+      type: 'edit',
+      payload: {
+        id: editingId,
+        text: editingText.trim(),
+      },
+    });
+
+    setEditingId(null);
+    setEditingText(''); // 編集後、対象がない状態へ戻す
+  };
+
+  // キャンセル関数
+  const cancelEditing = () => {
+    // dispatchをしないのでTodoの文章は変更されない
+    // editingIdをnullにする：編集状態を終了
+    // editingTextを空にする：入力途中の文章を破棄
+    // todos：変更されない
+    setEditingId(null);
+    setEditingText('');
   };
 
   return (
     <>
-      <TodoList todos={todos} toggleTodo={toggleTodo} />
-      <form onSubmit={handleSubmit}>
-        <input type="text" ref={todoNameRef} />
-        <button onClick={handleAddTodo}>タスクを追加</button>
-      </form>
-      <button onClick={handleClear}>完了したタスクの削除</button>
-      <div>残りのタスク:{todos.filter((todo) => !todo.completed).length}</div>
+      <TodoForm
+        inputVal={inputVal}
+        setInputVal={setInputVal}
+        addTodo={addTodo}
+      />
+      <TodoFilter setFilterType={setFilterType} />
+      <TodoList
+        todos={filteredTodos}
+        editingId={editingId}
+        editingText={editingText}
+        setEditingText={setEditingText}
+        startEditing={startEditing}
+        saveEditing={saveEditing}
+        deleteTodo={deleteTodo}
+        toggleTodo={toggleTodo}
+        cancelEditing={cancelEditing}
+      />
+      <TodoDoneDelete todos={todos} dispatch={dispatch} />
+      <TodoResult todos={todos} />
     </>
   );
-}
+};
 
 export default App;
